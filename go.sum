@@ -4,8 +4,8 @@ github.com/emersion/go-vcard v0.0.0-20230815062825-8fda7d206ec9 h1:ATgqloALX6cHC
 github.com/emersion/go-vcard v0.0.0-20230815062825-8fda7d206ec9/go.mod h1:HMJKR5wlh/ziNp+sHEDV2ltblO4JD2+IdDOWtGcQBTM=
 github.com/pmezard/go-difflib v1.0.0 h1:4DBwDE0NGyQoBHbLQYPwSUPoCMWR5BEzIk/f1lZbAQM=
 github.com/pmezard/go-difflib v1.0.0/go.mod h1:iKH77koFhYxTK1pcRnkKkqfTogsbg7gZNVY4sRDYZ/4=
-github.com/rubiojr/anytype-go v0.3.4-0.20260113170103-c35551b26bfd h1:RsQybevLzXc6z8VXh+0QPnfGIVQVU8HS5fUesAgp3Gw=
-github.com/rubiojr/anytype-go v0.3.4-0.20260113170103-c35551b26bfd/go.mod h1:QprlJ2pzNyBQG/UUZegFUrSfX+pBPUk8x8yz5gzMcuY=
+github.com/rubiojr/anytype-go v0.3.4-0.20260113171902-98bb0fe059b0 h1:2EE0B3xY8txAwhkAjPN3kgp4878n0V5IeBEq5MeHdj8=
+github.com/rubiojr/anytype-go v0.3.4-0.20260113171902-98bb0fe059b0/go.mod h1:IhCduaC21F751r89wsSuHo4iFZLg1P/1FVxD612e+S4=
 github.com/stretchr/testify v1.11.1 h1:7s2iGBzp5EwR7/aIZr8ao5+dra3wiQyKjjFuvgVKu7U=
 github.com/stretchr/testify v1.11.1/go.mod h1:wZwfW3scLgRK+23gO65QZefKpKQRnfz6sD981Nm4B6U=
 github.com/urfave/cli/v3 v3.6.1 h1:j8Qq8NyUawj/7rTYdBGrxcH7A/j7/G8Q5LhWEW4G3Mo=
