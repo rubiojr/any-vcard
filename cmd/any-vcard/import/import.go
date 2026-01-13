@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/emersion/go-vcard"
-	"github.com/epheo/anytype-go"
+	"github.com/rubiojr/anytype-go"
 	"github.com/rubiojr/any-vcard/cmd/any-vcard/util"
 	"github.com/urfave/cli/v3"
 )

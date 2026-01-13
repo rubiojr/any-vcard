@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/epheo/anytype-go"
+	"github.com/rubiojr/anytype-go"
 	vcardimport "github.com/rubiojr/any-vcard/cmd/any-vcard/import"
 	"github.com/rubiojr/any-vcard/cmd/any-vcard/util"
 	"github.com/stretchr/testify/assert"

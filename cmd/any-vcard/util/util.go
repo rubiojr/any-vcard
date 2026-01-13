@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/epheo/anytype-go"
-	_ "github.com/epheo/anytype-go/client"
+	"github.com/rubiojr/anytype-go"
+	_ "github.com/rubiojr/anytype-go/client"
 	"github.com/urfave/cli/v3"
 )
 
