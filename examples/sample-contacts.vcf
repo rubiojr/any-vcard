@@ -1,0 +1,68 @@
+BEGIN:VCARD
+VERSION:3.0
+FN:John Doe
+N:Doe;John;Michael;Mr.;Jr.
+EMAIL;TYPE=INTERNET:john.doe@example.com
+EMAIL;TYPE=INTERNET:jdoe@work.com
+TEL;TYPE=CELL:+1-555-123-4567
+TEL;TYPE=WORK:+1-555-987-6543
+ADR;TYPE=HOME:;;123 Main St;Springfield;IL;62701;USA
+ORG:Acme Corporation
+TITLE:Senior Developer
+URL:https://johndoe.example.com
+BDAY:1985-06-15
+NOTE:Important client contact. Prefers email communication.
+END:VCARD
+BEGIN:VCARD
+VERSION:3.0
+FN:Jane Smith
+N:Smith;Jane;Elizabeth;;
+EMAIL;TYPE=INTERNET:jane.smith@example.com
+TEL;TYPE=CELL:+1-555-234-5678
+ADR;TYPE=WORK:;;456 Business Ave;New York;NY;10001;USA
+ORG:Tech Innovations Inc.
+TITLE:Product Manager
+URL:https://janesmith.com
+URL:https://linkedin.com/in/janesmith
+BDAY:1990-03-22
+NOTE:Met at tech conference 2024
+END:VCARD
+BEGIN:VCARD
+VERSION:3.0
+FN:Bob Johnson
+N:Johnson;Bob;;;
+EMAIL;TYPE=INTERNET:bob.johnson@example.com
+TEL;TYPE=HOME:+1-555-345-6789
+TEL;TYPE=CELL:+1-555-111-2222
+TEL;TYPE=WORK:+1-555-333-4444
+ADR;TYPE=HOME:;;789 Oak Dr;Portland;OR;97201;USA
+NOTE:Old friend from college
+END:VCARD
+BEGIN:VCARD
+VERSION:3.0
+FN:Dr. Sarah Williams
+N:Williams;Sarah;Ann;Dr.;PhD
+EMAIL;TYPE=INTERNET:s.williams@university.edu
+EMAIL;TYPE=INTERNET:sarah@personal.com
+TEL;TYPE=WORK:+1-555-456-7890
+TEL;TYPE=CELL:+1-555-567-8901
+ADR;TYPE=WORK:;;100 University Ave;Boston;MA;02115;USA
+ORG:Boston University
+TITLE:Professor of Computer Science
+URL:https://cs.bu.edu/~swilliams
+BDAY:1978-11-08
+NOTE:Research collaborator. Expert in AI and machine learning.
+END:VCARD
+BEGIN:VCARD
+VERSION:3.0
+FN:Carlos Rodriguez
+N:Rodriguez;Carlos;Miguel;;
+EMAIL;TYPE=INTERNET:carlos.rodriguez@startup.io
+TEL;TYPE=CELL:+1-555-678-9012
+ADR;TYPE=WORK:;;200 Silicon Valley Blvd;San Francisco;CA;94102;USA
+ORG:NextGen Startup
+TITLE:CTO
+URL:https://nextgenstartup.io
+BDAY:1988-07-14
+NOTE:Potential business partner
+END:VCARD
