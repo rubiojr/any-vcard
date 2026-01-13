@@ -15,7 +15,7 @@ cd any-vcard
 make build
 
 # Or with Go
-go install github.com/rubiojr/any-vcard@latest
+go install github.com/rubiojr/any-vcard/cmd/any-vcard@latest
 ```
 
 ## Usage
