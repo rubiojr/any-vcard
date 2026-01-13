@@ -15,4 +15,4 @@ require (
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
 
-replace github.com/epheo/anytype-go => ./internal/anytype-go
+replace github.com/epheo/anytype-go => github.com/rubiojr/anytype-go v0.3.4-0.20260113170103-c35551b26bfd
