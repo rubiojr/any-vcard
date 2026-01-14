@@ -15,7 +15,7 @@ import (
 const (
 	ContactTypeKey = "contact"
 	AppName        = "any-vcard"
-	Version        = "0.1.0"
+	Version        = "0.2.1"
 )
 
 // RequireFlags checks that the specified flags are set
