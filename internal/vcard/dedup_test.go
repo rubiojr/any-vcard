@@ -425,19 +425,21 @@ func TestDedupIndex_MultipleEmails(t *testing.T) {
 // =============================================================================
 
 func TestDedupIndex_NameOnlyNoMatch(t *testing.T) {
+	// For contacts where BOTH have emails (neither minimal), same name + different data should NOT match
 	existing := []*Contact{
-		{FormattedName: "John Doe", Phones: []string{"111-111-1111"}},
+		{FormattedName: "John Doe", Phones: []string{"111-111-1111"}, Emails: []string{"john@example.com"}},
 	}
 	idx := NewDedupIndex(existing)
 
-	// Same name but different phone/email - should NOT match
+	// Same name but different phone AND different email - should NOT match (neither is minimal)
 	newContact := &Contact{
 		FormattedName: "John Doe",
 		Phones:        []string{"222-222-2222"},
+		Emails:        []string{"different@example.com"},
 	}
 
 	if idx.IsDuplicate(newContact) {
-		t.Error("Name-only match without data overlap should not be duplicate")
+		t.Error("Two non-minimal contacts with same name but no data overlap should not be duplicates")
 	}
 }
 
@@ -511,8 +513,9 @@ func TestDedupIndex_NameNormalization(t *testing.T) {
 		{"no accents same phone", "Jose Garcia", true, true},
 		{"uppercase same phone", "JOSE GARCIA", true, true},
 
-		// Same normalized name, different phone = no match (name only not enough)
-		{"lowercase diff phone", "jose garcia", false, false},
+		// Same normalized name, different phone = match for minimal contacts
+		// (This handles the case where same person has different phone numbers)
+		{"lowercase diff phone", "jose garcia", false, true},
 	}
 
 	for _, tt := range tests {
@@ -612,11 +615,76 @@ func TestDedupIndex_EmptyContacts(t *testing.T) {
 		t.Error("Name-only contact with empty index should not be duplicate")
 	}
 
-	// Add it and check another name-only doesn't match
+	// Add it and check another name-only DOES match (same name, both minimal)
 	idx.Add(nameOnly)
 	anotherNameOnly := &Contact{FormattedName: "John Doe"}
-	if idx.IsDuplicate(anotherNameOnly) {
-		t.Error("Two name-only contacts should not be considered duplicates")
+	if !idx.IsDuplicate(anotherNameOnly) {
+		t.Error("Two minimal name-only contacts with same name should be duplicates")
+	}
+}
+
+// TestDedupIndex_MinimalContactsSameName tests the Carrau scenario:
+// Multiple vCards with same name but different phone numbers should be merged
+func TestDedupIndex_MinimalContactsSameName(t *testing.T) {
+	// Simulates carrau.vcf: same person with different phones across vCards
+	idx := NewDedupIndex(nil)
+
+	// First contact: Carrau with phone 1
+	contact1 := &Contact{
+		FormattedName: "Carrau",
+		GivenName:     "Carrau",
+		Phones:        []string{"935401891"},
+	}
+	idx.Add(contact1)
+
+	// Second contact: Carrau with phone 2 (different number)
+	contact2 := &Contact{
+		FormattedName: "Carrau",
+		GivenName:     "Carrau",
+		Phones:        []string{"669 765 454"},
+	}
+
+	// Should detect as duplicate (same name, both minimal contacts)
+	if !idx.IsDuplicate(contact2) {
+		t.Error("Minimal contacts with same name should be duplicates even with different phones")
+	}
+
+	// Verify merge would combine phones
+	duplicates := idx.FindDuplicates(contact2)
+	if len(duplicates) != 1 {
+		t.Errorf("Expected 1 duplicate, got %d", len(duplicates))
+	}
+
+	// Test that when BOTH contacts have email (neither minimal), same name + different data should NOT match
+	contactWithEmail := &Contact{
+		FormattedName: "Carrau",
+		GivenName:     "Carrau",
+		Phones:        []string{"935401891"},
+		Emails:        []string{"carrau@example.com"},
+	}
+	idx2 := NewDedupIndex([]*Contact{contactWithEmail})
+
+	contact3 := &Contact{
+		FormattedName: "Carrau",
+		GivenName:     "Carrau",
+		Phones:        []string{"999999999"},              // Different phone
+		Emails:        []string{"different@example.com"}, // Different email
+	}
+
+	// Should NOT match because neither is minimal (both have email) and no overlap
+	if idx2.IsDuplicate(contact3) {
+		t.Error("Two non-minimal contacts with same name but no data overlap should not match")
+	}
+
+	// But a minimal contact (no email) SHOULD match the one with email
+	contact4 := &Contact{
+		FormattedName: "Carrau",
+		GivenName:     "Carrau",
+		Phones:        []string{"888888888"}, // Different phone, no email
+	}
+
+	if !idx2.IsDuplicate(contact4) {
+		t.Error("Minimal contact should match non-minimal contact with same name")
 	}
 }
 
@@ -1450,4 +1518,136 @@ func TestMergeContacts_RealWorldScenario(t *testing.T) {
 			t.Errorf("URL not merged")
 		}
 	})
+}
+
+// =============================================================================
+// DisplayName Tests
+// =============================================================================
+
+func TestContact_DisplayName(t *testing.T) {
+tests := []struct {
+name     string
+contact  Contact
+expected string
+}{
+{
+name:     "formatted name takes precedence",
+contact:  Contact{FormattedName: "John Doe", GivenName: "John", FamilyName: "Doe", Organization: "Acme Inc"},
+expected: "John Doe",
+},
+{
+name:     "name parts when no formatted name",
+contact:  Contact{GivenName: "John", FamilyName: "Doe", Organization: "Acme Inc"},
+expected: "John Doe",
+},
+{
+name:     "organization fallback when no name",
+contact:  Contact{Organization: "Acme Inc"},
+expected: "Acme Inc",
+},
+{
+name:     "organization fallback with phones",
+contact:  Contact{Organization: "Local Pizza", Phones: []string{"555-1234"}},
+expected: "Local Pizza",
+},
+{
+name:     "unnamed contact as last resort",
+contact:  Contact{Phones: []string{"555-1234"}},
+expected: "Unnamed Contact",
+},
+{
+name:     "prefix and suffix included",
+contact:  Contact{Prefix: "Dr", GivenName: "John", FamilyName: "Doe", Suffix: "Jr"},
+expected: "Dr John Doe Jr",
+},
+}
+
+for _, tt := range tests {
+t.Run(tt.name, func(t *testing.T) {
+got := tt.contact.DisplayName()
+if got != tt.expected {
+t.Errorf("DisplayName() = %q, want %q", got, tt.expected)
+}
+})
+}
+}
+
+// TestDedupIndex_SameNameWithAttributes tests that contacts with same name
+// are detected as duplicates even when one has more attributes than the other
+func TestDedupIndex_SameNameWithAttributes(t *testing.T) {
+// First contact: just name
+contact1 := &Contact{
+FormattedName: "John Doe",
+GivenName:     "John",
+FamilyName:    "Doe",
+}
+
+idx := NewDedupIndex([]*Contact{contact1})
+
+// Second contact: same name but with additional attributes
+contact2 := &Contact{
+FormattedName: "John Doe",
+GivenName:     "John",
+FamilyName:    "Doe",
+Organization:  "Acme Corp",
+Title:         "Engineer",
+Phones:        []string{"555-1234"},
+Emails:        []string{"john@acme.com"},
+}
+
+// Should detect as duplicate (same name)
+if !idx.IsDuplicate(contact2) {
+t.Error("Contact with same name should be detected as duplicate even when one has more attributes")
+}
+
+// Verify merge works
+duplicates := idx.FindDuplicates(contact2)
+if len(duplicates) != 1 {
+t.Fatalf("Expected 1 duplicate, got %d", len(duplicates))
+}
+
+merged := MergeContacts(duplicates[0], contact2)
+if !merged {
+t.Error("Merge should have occurred")
+}
+
+// Verify attributes were merged into contact1
+if duplicates[0].Organization != "Acme Corp" {
+t.Errorf("Organization not merged, got %q", duplicates[0].Organization)
+}
+if duplicates[0].Title != "Engineer" {
+t.Errorf("Title not merged, got %q", duplicates[0].Title)
+}
+if len(duplicates[0].Phones) != 1 || duplicates[0].Phones[0] != "555-1234" {
+t.Errorf("Phone not merged, got %v", duplicates[0].Phones)
+}
+if len(duplicates[0].Emails) != 1 || duplicates[0].Emails[0] != "john@acme.com" {
+t.Errorf("Email not merged, got %v", duplicates[0].Emails)
+}
+}
+
+// TestDedupIndex_SameNameOneHasPhone tests that a contact with just name
+// matches one with same name + phone (one is minimal)
+func TestDedupIndex_SameNameOneHasPhone(t *testing.T) {
+// First contact: just name, no phone
+contact1 := &Contact{
+FormattedName: "John Doe",
+GivenName:     "John",
+FamilyName:    "Doe",
+}
+
+idx := NewDedupIndex([]*Contact{contact1})
+
+// Second contact: same name + phone
+contact2 := &Contact{
+FormattedName: "John Doe",
+GivenName:     "John",
+FamilyName:    "Doe",
+Phones:        []string{"555-1234"},
+}
+
+// Should detect as duplicate (both minimal, same name)
+if !idx.IsDuplicate(contact2) {
+t.Error("Contact with same name should be duplicate even when one has phone")
+}
 }

@@ -88,11 +88,24 @@ func (idx *DedupIndex) FindDuplicates(c *Contact) []*Contact {
 		}
 	}
 
-	// Weak match: same name - only if we also have partial overlap
+	// Weak match: same name - only if we also have partial overlap OR one is minimal
 	nameKey := NormalizeNameForDedup(c.DisplayName())
-	for _, candidate := range idx.byName[nameKey] {
-		if hasAnyOverlap(c, candidate) {
-			addMatch(candidate)
+	// Skip name matching if name is empty or generic "unnamed contact"
+	if nameKey != "" && nameKey != "unnamed contact" {
+		for _, candidate := range idx.byName[nameKey] {
+			// If there's any phone/email overlap, definitely a match
+			if hasAnyOverlap(c, candidate) {
+				addMatch(candidate)
+				continue
+			}
+			// For contacts with same name but no phone/email overlap,
+			// consider them duplicates if at least one is minimal.
+			// This handles:
+			// - Same person with different phones (both minimal)
+			// - Sparse contact being enriched by richer one (one minimal)
+			if isMinimalContact(c) || isMinimalContact(candidate) {
+				addMatch(candidate)
+			}
 		}
 	}
 
@@ -356,6 +369,28 @@ func hasAnyOverlap(a, b *Contact) bool {
 	}
 
 	return false
+}
+
+// isMinimalContact returns true if a contact has limited identifying info
+// (just name + few phones, no email, no address, etc.)
+func isMinimalContact(c *Contact) bool {
+	// Has email = not minimal (email is strong identifier)
+	if len(c.Emails) > 0 {
+		return false
+	}
+	// Has many phones = not minimal
+	if len(c.Phones) > 3 {
+		return false
+	}
+	// Has address = not minimal
+	if len(c.Addresses) > 0 {
+		return false
+	}
+	// Has organization = not minimal
+	if c.Organization != "" {
+		return false
+	}
+	return true
 }
 
 // MatchStrength indicates how confident we are in a duplicate match

@@ -42,6 +42,9 @@ func (c Contact) DisplayName() string {
 	if len(parts) > 0 {
 		return strings.Join(parts, " ")
 	}
+	if c.Organization != "" {
+		return c.Organization
+	}
 	return "Unnamed Contact"
 }
 
