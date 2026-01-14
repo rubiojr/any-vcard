@@ -1,6 +1,6 @@
 module github.com/rubiojr/any-vcard
 
-go 1.23.7
+go 1.24.0
 
 require (
 	github.com/emersion/go-vcard v0.0.0-20230815062825-8fda7d206ec9
@@ -12,5 +12,6 @@ require (
 require (
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
+	golang.org/x/text v0.33.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )

@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/rubiojr/any-vcard/internal/vcard"
 	"github.com/rubiojr/anytype-go"
-	vcardimport "github.com/rubiojr/any-vcard/cmd/any-vcard/import"
 	"github.com/rubiojr/any-vcard/cmd/any-vcard/util"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -80,13 +80,13 @@ func TestImportVCard(t *testing.T) {
 
 	// Parse the sample vCard file
 	vcardPath := "../examples/sample-contacts.vcf"
-	contacts, err := vcardimport.ParseVCardFile(vcardPath)
+	contacts, err := vcard.ParseFile(vcardPath)
 	require.NoError(t, err, "Failed to parse vCard file")
 	require.Len(t, contacts, 5, "Expected 5 contacts in sample file")
 
 	// Import each contact
 	for _, contact := range contacts {
-		err := vcardimport.ImportContact(ctx, env.Client, env.SpaceID, typeResp.Type.Key, phoneKeys, emailKeys, contact)
+		err := vcard.Import(ctx, env.Client, env.SpaceID, typeResp.Type.Key, phoneKeys, emailKeys, contact)
 		require.NoError(t, err, "Failed to import contact: %s", contact.FormattedName)
 		t.Logf("Imported contact: %s", contact.FormattedName)
 	}
