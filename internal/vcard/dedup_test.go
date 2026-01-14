@@ -1648,6 +1648,28 @@ Phones:        []string{"555-1234"},
 
 // Should detect as duplicate (both minimal, same name)
 if !idx.IsDuplicate(contact2) {
-t.Error("Contact with same name should be duplicate even when one has phone")
+	t.Error("Contact with same name should be duplicate even when one has phone")
 }
+}
+
+func TestDedupIndex_OrgOnlyContacts(t *testing.T) {
+	// Organization-only contacts with same name should be detected as duplicates
+	// This is the "Apple España SA" case
+	contact1 := &Contact{
+		Organization: "Apple España SA",
+		URLs:         []string{"http://www.apple.com/es/"},
+	}
+
+	idx := NewDedupIndex([]*Contact{contact1})
+
+	// Second contact: identical org-only contact
+	contact2 := &Contact{
+		Organization: "Apple España SA",
+		URLs:         []string{"http://www.apple.com/es/"},
+	}
+
+	// Should detect as duplicate (both minimal - org alone is not a strong identifier)
+	if !idx.IsDuplicate(contact2) {
+		t.Error("Organization-only contacts with same name should be duplicates")
+	}
 }

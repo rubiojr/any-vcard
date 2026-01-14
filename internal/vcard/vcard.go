@@ -183,7 +183,7 @@ func BuildNotes(contact Contact) string {
 }
 
 // Import creates an Anytype object from a Contact
-func Import(ctx context.Context, client anytype.Client, spaceID, typeKey string, phoneKeys, emailKeys []string, contact Contact) error {
+func Import(ctx context.Context, client anytype.Client, spaceID, typeKey string, phoneKeys, emailKeys []string, contact Contact, templateID string) error {
 	name := contact.DisplayName()
 	props := BuildProperties(contact, phoneKeys, emailKeys)
 
@@ -195,6 +195,10 @@ func Import(ctx context.Context, client anytype.Client, spaceID, typeKey string,
 			Format: anytype.IconFormatEmoji,
 			Emoji:  "👤",
 		},
+	}
+
+	if templateID != "" {
+		req.TemplateID = templateID
 	}
 
 	_, err := client.Space(spaceID).Objects().Create(ctx, req)

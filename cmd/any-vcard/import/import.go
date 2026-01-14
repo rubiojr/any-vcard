@@ -9,6 +9,7 @@ import (
 	"github.com/rubiojr/any-vcard/cmd/any-vcard/util"
 	"github.com/rubiojr/any-vcard/internal/vcard"
 	"github.com/rubiojr/anytype-go"
+	"github.com/rubiojr/anytype-go/options"
 	"github.com/urfave/cli/v3"
 )
 
@@ -36,6 +37,11 @@ var Command = &cli.Command{
 			Name:  "dry-run",
 			Usage: "Parse vCard files without importing",
 		},
+		&cli.StringFlag{
+			Name:    "template",
+			Aliases: []string{"t"},
+			Usage:   "Template ID to use when creating new contacts",
+		},
 	},
 	Action: func(ctx context.Context, cmd *cli.Command) error {
 		if err := util.RequireFlags(cmd, "app-key", "space"); err != nil {
@@ -54,6 +60,7 @@ func importVCards(ctx context.Context, cmd *cli.Command) error {
 	dryRun := cmd.Bool("dry-run")
 	skipDuplicates := cmd.Bool("skip-duplicates")
 	mergeDuplicates := cmd.Bool("merge-duplicates") && !skipDuplicates // skip overrides merge
+	templateID := cmd.String("template")
 
 	allContacts, err := parseAllFiles(cmd)
 	if err != nil {
@@ -82,7 +89,7 @@ func importVCards(ctx context.Context, cmd *cli.Command) error {
 		dedupIndex = vcard.NewDedupIndex(nil)
 	}
 
-	return importContacts(ctx, client, spaceID, typeKey, phoneKeys, emailKeys, allContacts, dedupIndex, mergeDuplicates)
+	return importContacts(ctx, client, spaceID, typeKey, phoneKeys, emailKeys, allContacts, dedupIndex, mergeDuplicates, templateID)
 }
 
 func parseAllFiles(cmd *cli.Command) ([]vcard.Contact, error) {
@@ -145,18 +152,39 @@ func ensureContactType(ctx context.Context, client anytype.Client, spaceID strin
 
 func fetchExistingContacts(ctx context.Context, client anytype.Client, spaceID, typeKey string) *vcard.DedupIndex {
 	fmt.Printf("Checking for existing contacts...\n")
-	searchResp, err := client.Space(spaceID).Search(ctx, anytype.SearchRequest{
+
+	// Fetch all contacts with pagination using Search
+	var allObjects []anytype.Object
+	const pageSize = 100
+	offset := 0
+
+	searchReq := anytype.SearchRequest{
 		Types: []string{typeKey},
-	})
-	if err != nil {
-		log.Printf("Warning: could not search for existing contacts: %v", err)
-		return vcard.NewDedupIndex(nil)
 	}
-	fmt.Printf("✓ Found %d existing contacts\n", len(searchResp.Data))
+
+	for {
+		searchResp, err := client.Space(spaceID).Search(ctx, searchReq,
+			options.WithLimit(pageSize),
+			options.WithOffset(offset),
+		)
+		if err != nil {
+			log.Printf("Warning: could not search contacts: %v", err)
+			return vcard.NewDedupIndex(nil)
+		}
+
+		allObjects = append(allObjects, searchResp.Data...)
+
+		if len(searchResp.Data) < pageSize {
+			break // No more pages
+		}
+		offset += pageSize
+	}
+
+	fmt.Printf("✓ Found %d existing contacts\n", len(allObjects))
 
 	// Convert Anytype objects to contacts for indexing
-	contacts := make([]*vcard.Contact, 0, len(searchResp.Data))
-	for _, obj := range searchResp.Data {
+	contacts := make([]*vcard.Contact, 0, len(allObjects))
+	for _, obj := range allObjects {
 		contacts = append(contacts, anytypeObjectToContact(obj))
 	}
 
@@ -234,7 +262,7 @@ func anytypeObjectToContact(obj anytype.Object) *vcard.Contact {
 	return c
 }
 
-func importContacts(ctx context.Context, client anytype.Client, spaceID, typeKey string, phoneKeys, emailKeys []string, contacts []vcard.Contact, dedupIndex *vcard.DedupIndex, mergeDuplicates bool) error {
+func importContacts(ctx context.Context, client anytype.Client, spaceID, typeKey string, phoneKeys, emailKeys []string, contacts []vcard.Contact, dedupIndex *vcard.DedupIndex, mergeDuplicates bool, templateID string) error {
 	fmt.Printf("\nImporting %d contact(s)...\n", len(contacts))
 
 	var successCount, skippedCount, mergedCount int
@@ -265,7 +293,7 @@ func importContacts(ctx context.Context, client anytype.Client, spaceID, typeKey
 			continue
 		}
 
-		if err := importContact(ctx, client, spaceID, typeKey, phoneKeys, emailKeys, *contact); err != nil {
+		if err := importContact(ctx, client, spaceID, typeKey, phoneKeys, emailKeys, *contact, templateID); err != nil {
 			log.Printf("Error importing contact %d (%s): %v", i+1, contact.DisplayName(), err)
 			continue
 		}
@@ -288,8 +316,8 @@ func importContacts(ctx context.Context, client anytype.Client, spaceID, typeKey
 	return nil
 }
 
-func importContact(ctx context.Context, client anytype.Client, spaceID, typeKey string, phoneKeys, emailKeys []string, contact vcard.Contact) error {
-	return vcard.Import(ctx, client, spaceID, typeKey, phoneKeys, emailKeys, contact)
+func importContact(ctx context.Context, client anytype.Client, spaceID, typeKey string, phoneKeys, emailKeys []string, contact vcard.Contact, templateID string) error {
+	return vcard.Import(ctx, client, spaceID, typeKey, phoneKeys, emailKeys, contact, templateID)
 }
 
 // updateContact updates an existing contact with merged data

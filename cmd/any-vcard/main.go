@@ -6,8 +6,10 @@ import (
 	"os"
 
 	"github.com/rubiojr/any-vcard/cmd/any-vcard/auth"
+	"github.com/rubiojr/any-vcard/cmd/any-vcard/diff"
 	vcardimport "github.com/rubiojr/any-vcard/cmd/any-vcard/import"
 	"github.com/rubiojr/any-vcard/cmd/any-vcard/space"
+	"github.com/rubiojr/any-vcard/cmd/any-vcard/template"
 	"github.com/rubiojr/any-vcard/cmd/any-vcard/types"
 	"github.com/rubiojr/any-vcard/cmd/any-vcard/util"
 	"github.com/rubiojr/any-vcard/cmd/any-vcard/version"
@@ -22,8 +24,10 @@ func main() {
 		Flags:   util.GlobalFlags(),
 		Commands: []*cli.Command{
 			auth.Command,
+			diff.Command,
 			vcardimport.Command,
 			space.Command,
+			template.Command,
 			types.Command,
 			version.Command,
 		},

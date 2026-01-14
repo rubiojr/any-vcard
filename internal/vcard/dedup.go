@@ -386,10 +386,8 @@ func isMinimalContact(c *Contact) bool {
 	if len(c.Addresses) > 0 {
 		return false
 	}
-	// Has organization = not minimal
-	if c.Organization != "" {
-		return false
-	}
+	// Organization alone is not a strong identifier (many people at same org)
+	// so org-only contacts are still minimal
 	return true
 }
 
