@@ -978,3 +978,476 @@ func TestDedupIndex_InternationalContacts(t *testing.T) {
 		})
 	}
 }
+
+// =============================================================================
+// MergeContacts Tests
+// =============================================================================
+
+func TestMergeContacts_BasicFields(t *testing.T) {
+	tests := []struct {
+		name       string
+		dst        *Contact
+		src        *Contact
+		wantMerged bool
+		checkFunc  func(t *testing.T, dst *Contact)
+	}{
+		{
+			name:       "merge missing formatted name",
+			dst:        &Contact{},
+			src:        &Contact{FormattedName: "John Doe"},
+			wantMerged: true,
+			checkFunc: func(t *testing.T, dst *Contact) {
+				if dst.FormattedName != "John Doe" {
+					t.Errorf("FormattedName = %q, want %q", dst.FormattedName, "John Doe")
+				}
+			},
+		},
+		{
+			name:       "preserve existing formatted name",
+			dst:        &Contact{FormattedName: "Existing Name"},
+			src:        &Contact{FormattedName: "New Name"},
+			wantMerged: false,
+			checkFunc: func(t *testing.T, dst *Contact) {
+				if dst.FormattedName != "Existing Name" {
+					t.Errorf("FormattedName = %q, want %q", dst.FormattedName, "Existing Name")
+				}
+			},
+		},
+		{
+			name:       "merge all name parts",
+			dst:        &Contact{GivenName: "John"},
+			src:        &Contact{GivenName: "Johnny", FamilyName: "Doe", MiddleName: "Q", Prefix: "Dr.", Suffix: "Jr."},
+			wantMerged: true,
+			checkFunc: func(t *testing.T, dst *Contact) {
+				if dst.GivenName != "John" { // preserved
+					t.Errorf("GivenName = %q, want %q", dst.GivenName, "John")
+				}
+				if dst.FamilyName != "Doe" { // merged
+					t.Errorf("FamilyName = %q, want %q", dst.FamilyName, "Doe")
+				}
+				if dst.MiddleName != "Q" {
+					t.Errorf("MiddleName = %q, want %q", dst.MiddleName, "Q")
+				}
+				if dst.Prefix != "Dr." {
+					t.Errorf("Prefix = %q, want %q", dst.Prefix, "Dr.")
+				}
+				if dst.Suffix != "Jr." {
+					t.Errorf("Suffix = %q, want %q", dst.Suffix, "Jr.")
+				}
+			},
+		},
+		{
+			name:       "merge organization and title",
+			dst:        &Contact{Organization: "Acme"},
+			src:        &Contact{Organization: "Other Corp", Title: "Engineer"},
+			wantMerged: true,
+			checkFunc: func(t *testing.T, dst *Contact) {
+				if dst.Organization != "Acme" { // preserved
+					t.Errorf("Organization = %q, want %q", dst.Organization, "Acme")
+				}
+				if dst.Title != "Engineer" { // merged
+					t.Errorf("Title = %q, want %q", dst.Title, "Engineer")
+				}
+			},
+		},
+		{
+			name:       "merge birthday",
+			dst:        &Contact{},
+			src:        &Contact{Birthday: "1990-01-15"},
+			wantMerged: true,
+			checkFunc: func(t *testing.T, dst *Contact) {
+				if dst.Birthday != "1990-01-15" {
+					t.Errorf("Birthday = %q, want %q", dst.Birthday, "1990-01-15")
+				}
+			},
+		},
+		{
+			name:       "preserve existing birthday",
+			dst:        &Contact{Birthday: "1990-01-15"},
+			src:        &Contact{Birthday: "1991-02-20"},
+			wantMerged: false,
+			checkFunc: func(t *testing.T, dst *Contact) {
+				if dst.Birthday != "1990-01-15" {
+					t.Errorf("Birthday = %q, want %q", dst.Birthday, "1990-01-15")
+				}
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := MergeContacts(tt.dst, tt.src)
+			if got != tt.wantMerged {
+				t.Errorf("MergeContacts() = %v, want %v", got, tt.wantMerged)
+			}
+			tt.checkFunc(t, tt.dst)
+		})
+	}
+}
+
+func TestMergeContacts_Emails(t *testing.T) {
+	tests := []struct {
+		name       string
+		dstEmails  []string
+		srcEmails  []string
+		wantEmails []string
+		wantMerged bool
+	}{
+		{
+			name:       "add new emails",
+			dstEmails:  []string{"existing@example.com"},
+			srcEmails:  []string{"new@example.com"},
+			wantEmails: []string{"existing@example.com", "new@example.com"},
+			wantMerged: true,
+		},
+		{
+			name:       "skip duplicate emails",
+			dstEmails:  []string{"john@example.com"},
+			srcEmails:  []string{"JOHN@EXAMPLE.COM"}, // same after normalization
+			wantEmails: []string{"john@example.com"},
+			wantMerged: false,
+		},
+		{
+			name:       "skip gmail variations",
+			dstEmails:  []string{"johndoe@gmail.com"},
+			srcEmails:  []string{"john.doe@gmail.com", "johndoe+work@gmail.com"},
+			wantEmails: []string{"johndoe@gmail.com"},
+			wantMerged: false,
+		},
+		{
+			name:       "merge multiple new emails",
+			dstEmails:  []string{},
+			srcEmails:  []string{"a@example.com", "b@example.com"},
+			wantEmails: []string{"a@example.com", "b@example.com"},
+			wantMerged: true,
+		},
+		{
+			name:       "partial merge",
+			dstEmails:  []string{"existing@example.com"},
+			srcEmails:  []string{"existing@example.com", "new@example.com"},
+			wantEmails: []string{"existing@example.com", "new@example.com"},
+			wantMerged: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dst := &Contact{Emails: tt.dstEmails}
+			src := &Contact{Emails: tt.srcEmails}
+
+			got := MergeContacts(dst, src)
+			if got != tt.wantMerged {
+				t.Errorf("MergeContacts() = %v, want %v", got, tt.wantMerged)
+			}
+			if len(dst.Emails) != len(tt.wantEmails) {
+				t.Errorf("len(Emails) = %d, want %d; Emails = %v", len(dst.Emails), len(tt.wantEmails), dst.Emails)
+			}
+			for i, want := range tt.wantEmails {
+				if i < len(dst.Emails) && dst.Emails[i] != want {
+					t.Errorf("Emails[%d] = %q, want %q", i, dst.Emails[i], want)
+				}
+			}
+		})
+	}
+}
+
+func TestMergeContacts_Phones(t *testing.T) {
+	tests := []struct {
+		name       string
+		dstPhones  []string
+		srcPhones  []string
+		wantPhones []string
+		wantMerged bool
+	}{
+		{
+			name:       "add new phones",
+			dstPhones:  []string{"555-111-1111"},
+			srcPhones:  []string{"555-222-2222"},
+			wantPhones: []string{"555-111-1111", "555-222-2222"},
+			wantMerged: true,
+		},
+		{
+			name:       "skip duplicate phones with different formats",
+			dstPhones:  []string{"+1-555-123-4567"},
+			srcPhones:  []string{"555-123-4567", "(555) 123-4567"},
+			wantPhones: []string{"+1-555-123-4567"},
+			wantMerged: false,
+		},
+		{
+			name:       "skip duplicate with country code variation",
+			dstPhones:  []string{"555-123-4567"},
+			srcPhones:  []string{"+1-555-123-4567"},
+			wantPhones: []string{"555-123-4567"},
+			wantMerged: false,
+		},
+		{
+			name:       "merge multiple new phones",
+			dstPhones:  []string{},
+			srcPhones:  []string{"555-111-1111", "555-222-2222"},
+			wantPhones: []string{"555-111-1111", "555-222-2222"},
+			wantMerged: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dst := &Contact{Phones: tt.dstPhones}
+			src := &Contact{Phones: tt.srcPhones}
+
+			got := MergeContacts(dst, src)
+			if got != tt.wantMerged {
+				t.Errorf("MergeContacts() = %v, want %v", got, tt.wantMerged)
+			}
+			if len(dst.Phones) != len(tt.wantPhones) {
+				t.Errorf("len(Phones) = %d, want %d; Phones = %v", len(dst.Phones), len(tt.wantPhones), dst.Phones)
+			}
+		})
+	}
+}
+
+func TestMergeContacts_Addresses(t *testing.T) {
+	addr1 := Address{Street: "123 Main St", City: "Springfield", PostalCode: "12345"}
+	addr2 := Address{Street: "456 Oak Ave", City: "Shelbyville", PostalCode: "67890"}
+	addr1Dup := Address{Street: "123 main st", City: "SPRINGFIELD", PostalCode: "12345"} // same after normalization
+
+	tests := []struct {
+		name         string
+		dstAddresses []Address
+		srcAddresses []Address
+		wantCount    int
+		wantMerged   bool
+	}{
+		{
+			name:         "add new address",
+			dstAddresses: []Address{addr1},
+			srcAddresses: []Address{addr2},
+			wantCount:    2,
+			wantMerged:   true,
+		},
+		{
+			name:         "skip duplicate address",
+			dstAddresses: []Address{addr1},
+			srcAddresses: []Address{addr1Dup},
+			wantCount:    1,
+			wantMerged:   false,
+		},
+		{
+			name:         "merge to empty",
+			dstAddresses: []Address{},
+			srcAddresses: []Address{addr1, addr2},
+			wantCount:    2,
+			wantMerged:   true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dst := &Contact{Addresses: tt.dstAddresses}
+			src := &Contact{Addresses: tt.srcAddresses}
+
+			got := MergeContacts(dst, src)
+			if got != tt.wantMerged {
+				t.Errorf("MergeContacts() = %v, want %v", got, tt.wantMerged)
+			}
+			if len(dst.Addresses) != tt.wantCount {
+				t.Errorf("len(Addresses) = %d, want %d", len(dst.Addresses), tt.wantCount)
+			}
+		})
+	}
+}
+
+func TestMergeContacts_URLs(t *testing.T) {
+	tests := []struct {
+		name       string
+		dstURLs    []string
+		srcURLs    []string
+		wantURLs   []string
+		wantMerged bool
+	}{
+		{
+			name:       "add new URLs",
+			dstURLs:    []string{"https://example.com"},
+			srcURLs:    []string{"https://other.com"},
+			wantURLs:   []string{"https://example.com", "https://other.com"},
+			wantMerged: true,
+		},
+		{
+			name:       "skip duplicate URLs (case insensitive)",
+			dstURLs:    []string{"https://Example.com"},
+			srcURLs:    []string{"https://example.com"},
+			wantURLs:   []string{"https://Example.com"},
+			wantMerged: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dst := &Contact{URLs: tt.dstURLs}
+			src := &Contact{URLs: tt.srcURLs}
+
+			got := MergeContacts(dst, src)
+			if got != tt.wantMerged {
+				t.Errorf("MergeContacts() = %v, want %v", got, tt.wantMerged)
+			}
+			if len(dst.URLs) != len(tt.wantURLs) {
+				t.Errorf("len(URLs) = %d, want %d", len(dst.URLs), len(tt.wantURLs))
+			}
+		})
+	}
+}
+
+func TestMergeContacts_Notes(t *testing.T) {
+	tests := []struct {
+		name       string
+		dstNote    string
+		srcNote    string
+		wantNote   string
+		wantMerged bool
+	}{
+		{
+			name:       "merge to empty",
+			dstNote:    "",
+			srcNote:    "New note",
+			wantNote:   "New note",
+			wantMerged: true,
+		},
+		{
+			name:       "append different note",
+			dstNote:    "Existing note",
+			srcNote:    "Additional info",
+			wantNote:   "Existing note\n\n---\n\nAdditional info",
+			wantMerged: true,
+		},
+		{
+			name:       "skip identical note",
+			dstNote:    "Same note",
+			srcNote:    "Same note",
+			wantNote:   "Same note",
+			wantMerged: false,
+		},
+		{
+			name:       "skip empty src note",
+			dstNote:    "Existing",
+			srcNote:    "",
+			wantNote:   "Existing",
+			wantMerged: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dst := &Contact{Note: tt.dstNote}
+			src := &Contact{Note: tt.srcNote}
+
+			got := MergeContacts(dst, src)
+			if got != tt.wantMerged {
+				t.Errorf("MergeContacts() = %v, want %v", got, tt.wantMerged)
+			}
+			if dst.Note != tt.wantNote {
+				t.Errorf("Note = %q, want %q", dst.Note, tt.wantNote)
+			}
+		})
+	}
+}
+
+func TestMergeContacts_RealWorldScenario(t *testing.T) {
+	// Simulate merging contacts from different sources
+	t.Run("Google meets iCloud contact", func(t *testing.T) {
+		// Existing contact from Google
+		existing := &Contact{
+			FormattedName: "John Doe",
+			Emails:        []string{"john.doe@gmail.com"},
+			Phones:        []string{"+1-555-123-4567"},
+			Organization:  "Acme Corp",
+		}
+
+		// Same person from iCloud export
+		incoming := &Contact{
+			FormattedName: "John Doe",
+			GivenName:     "John",
+			FamilyName:    "Doe",
+			Emails:        []string{"johndoe@gmail.com", "john@work.com"}, // gmail variant + work email
+			Phones:        []string{"555-123-4567", "555-999-8888"},       // same + home
+			Birthday:      "1990-05-15",
+			Note:          "Met at conference 2023",
+		}
+
+		merged := MergeContacts(existing, incoming)
+		if !merged {
+			t.Error("Expected merge to occur")
+		}
+
+		// Check merged fields
+		if existing.GivenName != "John" {
+			t.Errorf("GivenName not merged: %q", existing.GivenName)
+		}
+		if existing.FamilyName != "Doe" {
+			t.Errorf("FamilyName not merged: %q", existing.FamilyName)
+		}
+		if existing.Birthday != "1990-05-15" {
+			t.Errorf("Birthday not merged: %q", existing.Birthday)
+		}
+
+		// Should have original email + work email (gmail variant skipped)
+		if len(existing.Emails) != 2 {
+			t.Errorf("Expected 2 emails, got %d: %v", len(existing.Emails), existing.Emails)
+		}
+
+		// Should have original phone + home phone (duplicate skipped)
+		if len(existing.Phones) != 2 {
+			t.Errorf("Expected 2 phones, got %d: %v", len(existing.Phones), existing.Phones)
+		}
+	})
+
+	t.Run("Sparse contact gets enriched", func(t *testing.T) {
+		// Existing sparse contact (just a name and phone)
+		existing := &Contact{
+			FormattedName: "Jane",
+			Phones:        []string{"555-111-1111"},
+		}
+
+		// Rich contact from another source
+		incoming := &Contact{
+			FormattedName: "Jane Smith",
+			GivenName:     "Jane",
+			FamilyName:    "Smith",
+			Emails:        []string{"jane@example.com"},
+			Phones:        []string{"555-111-1111"},
+			Organization:  "Tech Inc",
+			Title:         "Engineer",
+			Birthday:      "1985-03-20",
+			URLs:          []string{"https://jane.dev"},
+			Note:          "Works on backend",
+		}
+
+		merged := MergeContacts(existing, incoming)
+		if !merged {
+			t.Error("Expected merge to occur")
+		}
+
+		// Original name preserved
+		if existing.FormattedName != "Jane" {
+			t.Errorf("FormattedName changed: %q", existing.FormattedName)
+		}
+
+		// New fields merged
+		if existing.GivenName != "Jane" {
+			t.Errorf("GivenName not merged")
+		}
+		if existing.FamilyName != "Smith" {
+			t.Errorf("FamilyName not merged")
+		}
+		if len(existing.Emails) != 1 {
+			t.Errorf("Email not merged")
+		}
+		if existing.Organization != "Tech Inc" {
+			t.Errorf("Organization not merged")
+		}
+		if existing.Title != "Engineer" {
+			t.Errorf("Title not merged")
+		}
+		if len(existing.URLs) != 1 {
+			t.Errorf("URL not merged")
+		}
+	})
+}

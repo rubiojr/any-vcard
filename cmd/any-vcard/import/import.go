@@ -23,9 +23,14 @@ var Command = &cli.Command{
 			Value: true,
 		},
 		&cli.BoolFlag{
-			Name:  "skip-duplicates",
-			Usage: "Skip importing contacts that already exist (based on name+email or name+phone)",
+			Name:  "merge-duplicates",
+			Usage: "Merge missing fields into existing duplicates (default: true)",
 			Value: true,
+		},
+		&cli.BoolFlag{
+			Name:  "skip-duplicates",
+			Usage: "Skip duplicates without merging (overrides --merge-duplicates)",
+			Value: false,
 		},
 		&cli.BoolFlag{
 			Name:  "dry-run",
@@ -47,6 +52,8 @@ func importVCards(ctx context.Context, cmd *cli.Command) error {
 	client := util.NewClient(cmd)
 	spaceID := cmd.String("space")
 	dryRun := cmd.Bool("dry-run")
+	skipDuplicates := cmd.Bool("skip-duplicates")
+	mergeDuplicates := cmd.Bool("merge-duplicates") && !skipDuplicates // skip overrides merge
 
 	allContacts, err := parseAllFiles(cmd)
 	if err != nil {
@@ -69,13 +76,13 @@ func importVCards(ctx context.Context, cmd *cli.Command) error {
 	}
 
 	var dedupIndex *vcard.DedupIndex
-	if cmd.Bool("skip-duplicates") {
+	if skipDuplicates || mergeDuplicates {
 		dedupIndex = fetchExistingContacts(ctx, client, spaceID, typeKey)
 	} else {
 		dedupIndex = vcard.NewDedupIndex(nil)
 	}
 
-	return importContacts(ctx, client, spaceID, typeKey, phoneKeys, emailKeys, allContacts, dedupIndex)
+	return importContacts(ctx, client, spaceID, typeKey, phoneKeys, emailKeys, allContacts, dedupIndex, mergeDuplicates)
 }
 
 func parseAllFiles(cmd *cli.Command) ([]vcard.Contact, error) {
@@ -160,6 +167,7 @@ func fetchExistingContacts(ctx context.Context, client anytype.Client, spaceID, 
 func anytypeObjectToContact(obj anytype.Object) *vcard.Contact {
 	c := &vcard.Contact{
 		FormattedName: obj.Name,
+		ObjectID:      obj.ID,
 	}
 
 	for _, prop := range obj.Properties {
@@ -174,24 +182,86 @@ func anytypeObjectToContact(obj anytype.Object) *vcard.Contact {
 			}
 		case "organization":
 			c.Organization = prop.Text
+		case "title":
+			c.Title = prop.Text
 		case "birthday":
 			c.Birthday = prop.Date
+		case "given_name":
+			c.GivenName = prop.Text
+		case "family_name":
+			c.FamilyName = prop.Text
+		case "middle_name":
+			c.MiddleName = prop.Text
+		case "prefix":
+			c.Prefix = prop.Text
+		case "suffix":
+			c.Suffix = prop.Text
+		case "notes":
+			c.Note = prop.Text
+		case "url":
+			if prop.URL != "" {
+				c.URLs = append(c.URLs, prop.URL)
+			}
+		case "address":
+			if prop.Text != "" && len(c.Addresses) == 0 {
+				c.Addresses = append(c.Addresses, vcard.Address{Street: prop.Text})
+			} else if len(c.Addresses) > 0 {
+				c.Addresses[0].Street = prop.Text
+			}
+		case "city":
+			if len(c.Addresses) == 0 {
+				c.Addresses = append(c.Addresses, vcard.Address{})
+			}
+			c.Addresses[0].City = prop.Text
+		case "region":
+			if len(c.Addresses) == 0 {
+				c.Addresses = append(c.Addresses, vcard.Address{})
+			}
+			c.Addresses[0].Region = prop.Text
+		case "postal_code":
+			if len(c.Addresses) == 0 {
+				c.Addresses = append(c.Addresses, vcard.Address{})
+			}
+			c.Addresses[0].PostalCode = prop.Text
+		case "country":
+			if len(c.Addresses) == 0 {
+				c.Addresses = append(c.Addresses, vcard.Address{})
+			}
+			c.Addresses[0].Country = prop.Text
 		}
 	}
 
 	return c
 }
 
-func importContacts(ctx context.Context, client anytype.Client, spaceID, typeKey string, phoneKeys, emailKeys []string, contacts []vcard.Contact, dedupIndex *vcard.DedupIndex) error {
+func importContacts(ctx context.Context, client anytype.Client, spaceID, typeKey string, phoneKeys, emailKeys []string, contacts []vcard.Contact, dedupIndex *vcard.DedupIndex, mergeDuplicates bool) error {
 	fmt.Printf("\nImporting %d contact(s)...\n", len(contacts))
 
-	var successCount, skippedCount int
+	var successCount, skippedCount, mergedCount int
 	for i := range contacts {
 		contact := &contacts[i]
 
-		if dedupIndex.IsDuplicate(contact) {
-			log.Printf("Skipping duplicate contact %d (%s)", i+1, contact.DisplayName())
-			skippedCount++
+		duplicates := dedupIndex.FindDuplicates(contact)
+		if len(duplicates) > 0 {
+			if mergeDuplicates {
+				// Merge into the first duplicate found
+				existing := duplicates[0]
+				if vcard.MergeContacts(existing, contact) {
+					// Update the existing contact in Anytype
+					if err := updateContact(ctx, client, spaceID, phoneKeys, emailKeys, existing); err != nil {
+						log.Printf("Error merging contact %d (%s): %v", i+1, contact.DisplayName(), err)
+						continue
+					}
+					mergedCount++
+					fmt.Printf("⊕ Merged: %s → %s\n", contact.DisplayName(), existing.DisplayName())
+				} else {
+					log.Printf("Skipping %s (nothing new to merge)", contact.DisplayName())
+					skippedCount++
+				}
+			} else {
+				log.Printf("Skipping duplicate contact %d (%s)", i+1, contact.DisplayName())
+				skippedCount++
+			}
 			continue
 		}
 
@@ -208,6 +278,9 @@ func importContacts(ctx context.Context, client anytype.Client, spaceID, typeKey
 	}
 
 	fmt.Printf("\n✓ Successfully imported %d/%d contacts", successCount, len(contacts))
+	if mergedCount > 0 {
+		fmt.Printf(" (merged %d)", mergedCount)
+	}
 	if skippedCount > 0 {
 		fmt.Printf(" (skipped %d duplicates)", skippedCount)
 	}
@@ -217,4 +290,9 @@ func importContacts(ctx context.Context, client anytype.Client, spaceID, typeKey
 
 func importContact(ctx context.Context, client anytype.Client, spaceID, typeKey string, phoneKeys, emailKeys []string, contact vcard.Contact) error {
 	return vcard.Import(ctx, client, spaceID, typeKey, phoneKeys, emailKeys, contact)
+}
+
+// updateContact updates an existing contact with merged data
+func updateContact(ctx context.Context, client anytype.Client, spaceID string, phoneKeys, emailKeys []string, contact *vcard.Contact) error {
+	return vcard.Update(ctx, client, spaceID, phoneKeys, emailKeys, contact)
 }

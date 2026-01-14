@@ -196,6 +196,141 @@ func removeAccents(s string) string {
 	return result
 }
 
+// MergeContacts merges missing fields from src into dst.
+// Prefers existing values in dst (only fills in missing data).
+// Returns true if any fields were merged.
+func MergeContacts(dst, src *Contact) bool {
+	merged := false
+
+	// Merge name fields (only if dst is missing them)
+	if dst.FormattedName == "" && src.FormattedName != "" {
+		dst.FormattedName = src.FormattedName
+		merged = true
+	}
+	if dst.GivenName == "" && src.GivenName != "" {
+		dst.GivenName = src.GivenName
+		merged = true
+	}
+	if dst.FamilyName == "" && src.FamilyName != "" {
+		dst.FamilyName = src.FamilyName
+		merged = true
+	}
+	if dst.MiddleName == "" && src.MiddleName != "" {
+		dst.MiddleName = src.MiddleName
+		merged = true
+	}
+	if dst.Prefix == "" && src.Prefix != "" {
+		dst.Prefix = src.Prefix
+		merged = true
+	}
+	if dst.Suffix == "" && src.Suffix != "" {
+		dst.Suffix = src.Suffix
+		merged = true
+	}
+
+	// Merge unique emails
+	existingEmails := make(map[string]struct{})
+	for _, e := range dst.Emails {
+		existingEmails[NormalizeEmailForDedup(e)] = struct{}{}
+	}
+	for _, e := range src.Emails {
+		key := NormalizeEmailForDedup(e)
+		if _, exists := existingEmails[key]; !exists && key != "" {
+			dst.Emails = append(dst.Emails, e)
+			existingEmails[key] = struct{}{}
+			merged = true
+		}
+	}
+
+	// Merge unique phones
+	existingPhones := make(map[string]struct{})
+	for _, p := range dst.Phones {
+		existingPhones[NormalizePhoneForDedup(p)] = struct{}{}
+	}
+	for _, p := range src.Phones {
+		key := NormalizePhoneForDedup(p)
+		if _, exists := existingPhones[key]; !exists && key != "" {
+			dst.Phones = append(dst.Phones, p)
+			existingPhones[key] = struct{}{}
+			merged = true
+		}
+	}
+
+	// Merge unique addresses
+	existingAddrs := make(map[string]struct{})
+	for _, a := range dst.Addresses {
+		existingAddrs[normalizeAddress(a)] = struct{}{}
+	}
+	for _, a := range src.Addresses {
+		key := normalizeAddress(a)
+		if _, exists := existingAddrs[key]; !exists && key != "" {
+			dst.Addresses = append(dst.Addresses, a)
+			existingAddrs[key] = struct{}{}
+			merged = true
+		}
+	}
+
+	// Merge organization and title
+	if dst.Organization == "" && src.Organization != "" {
+		dst.Organization = src.Organization
+		merged = true
+	}
+	if dst.Title == "" && src.Title != "" {
+		dst.Title = src.Title
+		merged = true
+	}
+
+	// Merge unique URLs
+	existingURLs := make(map[string]struct{})
+	for _, u := range dst.URLs {
+		existingURLs[strings.ToLower(u)] = struct{}{}
+	}
+	for _, u := range src.URLs {
+		key := strings.ToLower(u)
+		if _, exists := existingURLs[key]; !exists && key != "" {
+			dst.URLs = append(dst.URLs, u)
+			existingURLs[key] = struct{}{}
+			merged = true
+		}
+	}
+
+	// Merge notes (append if different)
+	if src.Note != "" && dst.Note != src.Note {
+		if dst.Note == "" {
+			dst.Note = src.Note
+		} else {
+			dst.Note = dst.Note + "\n\n---\n\n" + src.Note
+		}
+		merged = true
+	}
+
+	// Merge birthday
+	if dst.Birthday == "" && src.Birthday != "" {
+		dst.Birthday = src.Birthday
+		merged = true
+	}
+
+	// Merge photo
+	if dst.Photo == "" && src.Photo != "" {
+		dst.Photo = src.Photo
+		merged = true
+	}
+
+	return merged
+}
+
+// normalizeAddress creates a key for address deduplication
+func normalizeAddress(a Address) string {
+	parts := []string{
+		strings.ToLower(strings.TrimSpace(a.Street)),
+		strings.ToLower(strings.TrimSpace(a.City)),
+		strings.ToLower(strings.TrimSpace(a.Region)),
+		strings.ToLower(strings.TrimSpace(a.PostalCode)),
+		strings.ToLower(strings.TrimSpace(a.Country)),
+	}
+	return strings.Join(parts, "|")
+}
+
 // hasAnyOverlap checks if two contacts share any phone or email
 func hasAnyOverlap(a, b *Contact) bool {
 	// Check phone overlap

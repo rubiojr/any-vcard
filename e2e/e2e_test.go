@@ -9,9 +9,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/rubiojr/any-vcard/cmd/any-vcard/util"
 	"github.com/rubiojr/any-vcard/internal/vcard"
 	"github.com/rubiojr/anytype-go"
-	"github.com/rubiojr/any-vcard/cmd/any-vcard/util"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -206,4 +206,147 @@ func normalizePhone(phone string) string {
 	phone = strings.ReplaceAll(phone, "(", "")
 	phone = strings.ReplaceAll(phone, ")", "")
 	return phone
+}
+
+// TestMergeContacts tests the merge functionality when importing duplicate contacts
+func TestMergeContacts(t *testing.T) {
+	env := SetupTestSpace(t)
+	ctx := context.Background()
+
+	// Create contact type in the test space
+	typeResp, err := util.CreateContactType(ctx, env.Client, env.SpaceID)
+	require.NoError(t, err, "Failed to create Contact type")
+	t.Logf("Created Contact type with key: %s", typeResp.Type.Key)
+
+	// Ensure properties exist
+	phoneKeys, emailKeys, err := util.EnsureContactProperties(ctx, env.Client, env.SpaceID)
+	require.NoError(t, err, "Failed to ensure contact properties")
+
+	// Step 1: Import the first contact (sparse - just name, email, and phone)
+	firstContact := vcard.Contact{
+		FormattedName: "Merge Test User",
+		Emails:        []string{"merge.test@example.com"},
+		Phones:        []string{"+1-555-999-0001"},
+	}
+
+	err = vcard.Import(ctx, env.Client, env.SpaceID, typeResp.Type.Key, phoneKeys, emailKeys, firstContact)
+	require.NoError(t, err, "Failed to import first contact")
+	t.Logf("Imported first contact: %s", firstContact.FormattedName)
+
+	// Wait for indexing
+	time.Sleep(2 * time.Second)
+
+	// Verify the first contact was created
+	searchResp, err := env.Client.Space(env.SpaceID).Search(ctx, anytype.SearchRequest{
+		Types: []string{typeResp.Type.Key},
+	})
+	require.NoError(t, err, "Failed to search for contacts")
+	require.Len(t, searchResp.Data, 1, "Expected 1 contact after first import")
+
+	originalObjectID := searchResp.Data[0].ID
+	t.Logf("First contact created with ID: %s", originalObjectID)
+
+	// Verify initial state - should have email but no organization/title
+	assert.Equal(t, "Merge Test User", searchResp.Data[0].Name)
+	assert.Empty(t, getPropertyText(searchResp.Data[0].Properties, "organization"), "Organization should be empty initially")
+	assert.Empty(t, getPropertyText(searchResp.Data[0].Properties, "title"), "Title should be empty initially")
+
+	// Step 2: Create a "duplicate" contact with additional info to merge
+	// This contact has the same email (will be detected as duplicate) but adds new fields
+	secondContact := vcard.Contact{
+		FormattedName: "Merge Test User",
+		GivenName:     "Merge",
+		FamilyName:    "User",
+		Emails:        []string{"merge.test@example.com", "merge.secondary@example.com"}, // same primary + new email
+		Phones:        []string{"+1-555-999-0001", "+1-555-999-0002"},                    // same primary + new phone
+		Organization:  "Test Organization",
+		Title:         "Test Engineer",
+		Birthday:      "1990-06-15",
+		Note:          "Added via merge",
+	}
+
+	// Build dedup index from existing contacts
+	existingContacts := make([]*vcard.Contact, 0, len(searchResp.Data))
+	for _, obj := range searchResp.Data {
+		c := &vcard.Contact{
+			FormattedName: obj.Name,
+			ObjectID:      obj.ID,
+		}
+		for _, prop := range obj.Properties {
+			switch prop.Key {
+			case "email", "email_2", "email_3":
+				if prop.Email != "" {
+					c.Emails = append(c.Emails, prop.Email)
+				}
+			case "phone", "phone_2", "phone_3":
+				if prop.Phone != "" {
+					c.Phones = append(c.Phones, prop.Phone)
+				}
+			case "organization":
+				c.Organization = prop.Text
+			case "title":
+				c.Title = prop.Text
+			case "given_name":
+				c.GivenName = prop.Text
+			case "family_name":
+				c.FamilyName = prop.Text
+			case "birthday":
+				c.Birthday = prop.Date
+			case "notes":
+				c.Note = prop.Text
+			}
+		}
+		existingContacts = append(existingContacts, c)
+	}
+	dedupIndex := vcard.NewDedupIndex(existingContacts)
+
+	// Step 3: Find the duplicate and merge
+	duplicates := dedupIndex.FindDuplicates(&secondContact)
+	require.Len(t, duplicates, 1, "Should find exactly one duplicate")
+
+	existingContact := duplicates[0]
+	assert.Equal(t, originalObjectID, existingContact.ObjectID, "Duplicate should match original contact")
+
+	// Perform the merge
+	merged := vcard.MergeContacts(existingContact, &secondContact)
+	require.True(t, merged, "Merge should have occurred")
+
+	// Step 4: Update the contact in Anytype using the merged data
+	err = vcard.Update(ctx, env.Client, env.SpaceID, phoneKeys, emailKeys, existingContact)
+	require.NoError(t, err, "Failed to update contact with merged data")
+	t.Logf("Merged contact updated in Anytype")
+
+	// Wait for indexing
+	time.Sleep(2 * time.Second)
+
+	// Step 5: Verify the merged result
+	searchResp, err = env.Client.Space(env.SpaceID).Search(ctx, anytype.SearchRequest{
+		Types: []string{typeResp.Type.Key},
+	})
+	require.NoError(t, err, "Failed to search for contacts after merge")
+	require.Len(t, searchResp.Data, 1, "Should still have only 1 contact after merge (not 2)")
+
+	mergedObj := searchResp.Data[0]
+	assert.Equal(t, originalObjectID, mergedObj.ID, "Object ID should remain the same after merge")
+
+	// Verify merged fields
+	assert.Equal(t, "Test Organization", getPropertyText(mergedObj.Properties, "organization"), "Organization should be merged")
+	assert.Equal(t, "Test Engineer", getPropertyText(mergedObj.Properties, "title"), "Title should be merged")
+	assert.Equal(t, "Merge", getPropertyText(mergedObj.Properties, "given_name"), "GivenName should be merged")
+	assert.Equal(t, "User", getPropertyText(mergedObj.Properties, "family_name"), "FamilyName should be merged")
+
+	// Verify emails (should have both original and new)
+	foundEmails := getPropertyEmails(mergedObj.Properties)
+	assert.Contains(t, foundEmails, "merge.test@example.com", "Original email should still exist")
+	assert.Contains(t, foundEmails, "merge.secondary@example.com", "New email should be merged")
+
+	// Verify phones (should have both original and new)
+	foundPhones := getPropertyPhones(mergedObj.Properties)
+	assert.GreaterOrEqual(t, len(foundPhones), 2, "Should have at least 2 phones after merge")
+
+	// Verify notes
+	notes := getPropertyText(mergedObj.Properties, "notes")
+	assert.Contains(t, notes, "Added via merge", "Notes should be merged")
+
+	t.Logf("Merge test completed successfully - contact enriched with new data")
 }

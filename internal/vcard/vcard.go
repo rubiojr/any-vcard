@@ -30,6 +30,7 @@ type Contact struct {
 	Note          string
 	Birthday      string
 	Photo         string
+	ObjectID      string // Anytype object ID (used for merge operations)
 }
 
 // DisplayName returns the best available name for the contact
@@ -195,6 +196,21 @@ func Import(ctx context.Context, client anytype.Client, spaceID, typeKey string,
 
 	_, err := client.Space(spaceID).Objects().Create(ctx, req)
 	return err
+}
+
+// Update updates an existing Anytype object with contact data
+func Update(ctx context.Context, client anytype.Client, spaceID string, phoneKeys, emailKeys []string, contact *Contact) error {
+	if contact.ObjectID == "" {
+		return fmt.Errorf("contact has no ObjectID")
+	}
+
+	props := BuildProperties(*contact, phoneKeys, emailKeys)
+
+	req := anytype.UpdateObjectRequest{
+		Properties: props,
+	}
+
+	return client.Space(spaceID).Object(contact.ObjectID).Update(ctx, req)
 }
 
 // BuildProperties constructs the properties slice for a contact
